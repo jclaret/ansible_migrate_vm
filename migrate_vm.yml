@@ -1,0 +1,164 @@
+# ansible-playbook migrate_vm.yml --ask-vault -e "vms_to_migrate=vm01" -e "cluster_migrate_to=L1" -e "host_migrate_to=rhv03.local.net"
+---
+#########################################
+# This playbook has NO support          #
+# from Red Hat Global Support Services  #
+#########################################
+- hosts: 127.0.0.1
+  connection: localhost
+  gather_facts: false
+
+  vars_files:
+    - vars/rhv.yml
+
+  tasks:
+    - name: rhv login
+      ovirt_auth:
+        url: "{{ rhv_api }}/ovirt-engine/api"
+        username: "{{ rhv_user }}"
+        password: "{{ rhv_pass }}"
+
+    - name: check vm param
+      fail:
+        msg: "vm name is required."
+      when: vms_to_migrate is not defined
+
+    - name: check cluster param
+      fail:
+        msg: "cluster name is required."
+      when: cluster_migrate_to is not defined
+
+    - name: get vm facts 
+      ovirt_vms_facts:
+        auth: "{{ ovirt_auth }}"
+        pattern: name={{ vms_to_migrate }}
+        fetch_nested: true
+        nested_attributes: href
+      no_log: True
+
+    - name: check if vm exist
+      fail:
+        msg: "vms does not exist or name is incorrect."
+      when: ovirt_vms[0] is not defined
+
+    - name: show vm info
+      debug:
+        msg: 
+          - vm name and status: "{{ ovirt_vms[0].name }} is {{ ovirt_vms[0].status }}"
+          - vm is on cluster : "{{ ovirt_vms[0].cluster.id }}"
+          - vm is on host : "{{ ovirt_vms[0].host.id }}"
+
+    - name: hosts check
+      block:
+        - name: get hosts facts 
+          ovirt_hosts_facts:
+            auth: "{{ ovirt_auth }}"
+            pattern: name={{ host_migrate_to }}
+            fetch_nested: true
+
+        - name: check if host exist
+          fail:
+            msg: "host does not exist or name is incorrect."
+          when: ovirt_hosts[0] is not defined
+
+        - name: show host info
+          debug:
+            msg: 
+              - host name and status: "{{ ovirt_hosts[0].address }} is {{ ovirt_hosts[0].status }}"
+              - host is on cluster : "{{ ovirt_hosts[0].cluster.id }}"
+      when: host_migrate_to is defined 
+
+    - name: get dest cluster facts 
+      ovirt_cluster_facts:
+        auth: "{{ ovirt_auth }}"
+        pattern: name={{ cluster_migrate_to }}
+        fetch_nested: true
+      register: destination_cluster
+      no_log: True
+
+    - name: check if dest cluster exist
+      fail:
+        msg: "cluster does not exist or name is incorrect."
+      when: destination_cluster.ansible_facts.ovirt_clusters[0] is not defined
+
+    - name: get current cluster facts 
+      ovirt_cluster_facts:
+        auth: "{{ ovirt_auth }}"
+        fetch_nested: true
+      register: current_clusters
+      no_log: True
+
+    - name: get current cluster
+      set_fact:
+        rhv_vm_current_cluster: "{{ item.name }}"
+        rhv_vm_current_cluster_id: "{{ item.id }}"
+      loop: "{{ current_clusters.ansible_facts.ovirt_clusters }}"
+      when: (item.id | join() ) == ovirt_vms[0].cluster.id
+
+    - name: show current cluster info
+      debug:
+        msg: 
+          - current cluster name and id: "{{ rhv_vm_current_cluster }} {{ rhv_vm_current_cluster_id }}"
+
+    - name: get destination cluster
+      set_fact:
+        rhv_vm_dest_cluster: "{{ item.name }}"
+        rhv_vm_dest_cluster_id: "{{ item.id }}"
+      loop: "{{ destination_cluster.ansible_facts.ovirt_clusters }}"
+      when: (item.name | join() ) == cluster_migrate_to
+
+    - name: show dest cluster info
+      debug:
+        msg: 
+          - dest cluster name and id: "{{ rhv_vm_dest_cluster }} {{ rhv_vm_dest_cluster_id }}"
+
+    - name: get vm id
+      set_fact:
+        rhv_vm_id: "{{ ovirt_vms[0].href }}"
+
+    - name: set uri body adding host
+      set_fact:
+        rhv_uri_body: '{"cluster":{"id":"{{ rhv_vm_dest_cluster_id }}"},"force":"true", "host":{"name":"{{ host_migrate_to }}"}}'
+      when: host_migrate_to is defined
+
+    - name: set uri body without host
+      set_fact:
+        rhv_uri_body: '{"cluster":{"id":"{{ rhv_vm_dest_cluster_id }}"},"force":"true"}'
+      when: host_migrate_to is not defined
+
+    - name: check if vm cluster and destination cluster are equals
+      fail:
+        msg: "vm cluster and destination cluster are equals"
+      when: rhv_vm_current_cluster_id == rhv_vm_dest_cluster_id
+
+    - name: migration from "{{ rhv_vm_current_cluster }}" to "{{ rhv_vm_dest_cluster }}"
+      uri:
+        url: "{{ rhv_api }}{{ rhv_vm_id }}/migrate"
+        validate_certs: no
+        force_basic_auth: yes
+        return_content: yes
+        method: POST
+        headers:
+          'Version': '4' 
+          'Content-Type': 'application/json' 
+          'Accept': 'application/json'
+        body_format: json
+        body: "{{ rhv_uri_body }}"
+        user: "{{ rhv_user }}"
+        password: "{{ rhv_pass }}"
+        status_code: 200
+      register: result
+      #until: result.json.status == "complete"
+      #retries: 10
+      #delay: 30
+
+    - name: result
+      debug:
+        msg: 
+          - request result "{{ result.json.status }}"
+          - job id "{{ result.json.job.id }}"
+
+    - name: Auth
+      ovirt_auth:
+        state: absent
+        ovirt_auth: "{{ ovirt_auth }}"
