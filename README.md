@@ -6,7 +6,7 @@ NOTE: Although migrate vms between clusters is not recommended, it may be useful
 
 ## Requirements
 
-The following software must be installed/present on your local machine before you can use Packer to build the Vagrant box file:
+The following software must be installed/present on your local machine before you can use it:
 
   - [Ovirt pyhton SDN](https://pypi.org/project/ovirt-engine-sdk-python/)
   - [Ansible](http://docs.ansible.com/intro_installation.html) > 2.4
