@@ -8,7 +8,7 @@ NOTE: Although migrate vms between clusters is not recommended, it may be useful
 
 The following software must be installed/present on your local machine before you can use it:
 
-  - [Ovirt pyhton SDN](https://pypi.org/project/ovirt-engine-sdk-python/)
+  - [Ovirt python SDN](https://pypi.org/project/ovirt-engine-sdk-python/)
   - [Ansible](http://docs.ansible.com/intro_installation.html) > 2.4
   - [Red Hat Virtualization](https://www.redhat.com/es/technologies/virtualization/enterprise-virtualization)
 
